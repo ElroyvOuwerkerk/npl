@@ -1,0 +1,600 @@
+/*Check if script already exists (detects duplicate loading) and function for reporting script errors */
+var npl_cro_script = npl_cro_script || undefined;
+function npl_cro_script_reportError(err) {
+    dataLayer.push({ 'event': 'experiment', 'interaction_type': 'experiment_error', 'test_name': err.name + ': ' + err.message });
+}
+try { if (typeof npl_cro_script !== 'undefined') { throw new Error('npl_cro_script variable already exists (double loading the script?)'); } } catch (err) { try { npl_cro_script_reportError(err); } catch (err) { } }
+
+if (typeof npl_cro_script === 'undefined') {
+    try {
+        npl_cro_script = (function () {
+            /*
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                ~~~~							    							~~~~
+                ~~~~  CHANGEABLE SETTINGS FOR TEST  ~~~~
+                ~~~~							    							~~~~
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                */
+
+            /// 1. Set up the basic variables
+            var test_id = 'npl001',		 						//unique ID. used for GA labels and localStorage key.
+                test_description = 'corporate | focusing effect',				//Also send with tag. Helps to understand what test was again
+                test_eventName = 'experiment',							//The eventname that is being used in GTM
+                traffic_total = 100, 										//a number from 1-100 for the % of traffic to include in the test.
+                traffic_allocation = [50, 50, 0],					//e.g. [20, 40, 40] for three variations or [] for equal spread. Does not need to add up to 100.
+                useHotjar = false,											//adds hotjar triggers like 'abTest-CRO01' and 'abTest-CRO01-B'. Also adds these names as tags for recordings.
+                forceLoadWindowLoadTime = 10, 					//How long the script should wait for the window.onload event in seconds
+                autoStart = true,												//If you want to trigger this script manually with 'npl_cro_script.start()' or automatically after it is loaded
+                fireUserInTestNextPV = false,						//If the action that puts user in a test, navigates the user away from the page, set this to true to send the variation loaded event in the next pageview. ALSO RUN THIS SCRIPT ON THE NEXT PAGE THE USERS WILL GO TO!
+                sendPreloadedEvent = false;							//Set this to true if you want to know who got pre-assigned to a variation, but the user is not yet in the test. Will send an abTest event that says which condition is pre-loaded.
+
+
+            /// 2. Decide at what moment a user should be registered as being part of the test (e.g. when the user sees the variation changes).
+            /**
+                * function to decide when user will be part of the abTest. You can trigger it right away (sending event to tag manager), or wait for a specific moment.
+                * You can also call setUserInTest() anywhere else to put user in a test. Will fire only once per pageview.
+                */
+            var triggerUserInTest = function () {
+                loadOnWindowLoad(function () {
+                    setUserInTest(); //Sends the actual trigger. Place this anywhere.
+                });
+            };
+
+
+
+            /// 3. Add code for changes to the pages by each variation.
+            /**
+                * Put your code for all the variations in this variantions-object
+                */
+            var variations = {
+                'Control': {
+                    do: function () {
+                        logDebug('[variations]Run Control script');
+                        /* dance like a banana */
+                        alert("A Running");
+                    }
+                },
+                'B': {
+                    do: function () {
+                        logDebug('[variations]Run B script');
+                        //ADD CODE THAT NEEDS TO BE LOADED AS FAST AS POSSIBLE HERE
+                       
+
+                        loadOnWindowLoad(function () {
+                            logDebug('[variations]Running code after window.onload event');
+                            //ADD CODE TO LOAD AFTER WINDOW.LOAD EVENT HERE
+                            //sendCustomEvent('action'); - to send events to the tag manager. Everything will be preset but the action that you can set.
+                            //$(window).scroll(throttle(function(){ console.log('calling function') }, 500)); - this trottle calls a function only once within a time frame. Handy with eventlisteners like window.scroll
+                            //$(window).scroll(debounce(function(){ console.log('calling function') }, 500)); - this debounce only calls a function if the function is not called for a specified time (500ms) after the function was initially called.
+                            //$(window).scroll(debounce(function(){ console.log('calling function') }, 500, true)); - this debounce calls a function immediately (true) but then stops until the function is not called for a specified time (500ms)
+                            //$('body').on('click', 'button', once(function(){ console.log('showing overlay') })); - this once calls a function only once and then just returns what the function return (could just be nothing). Handy for triggering an overlay only once.
+                        });
+                    }
+                },
+                'C': {
+                    do: function () {
+                        logDebug('[variations]Run C script');
+                        //ADD CODE THAT NEEDS TO BE LOADED AS FAST AS POSSIBLE HERE
+
+
+                        loadOnWindowLoad(function () {
+                            logDebug('[variations]Running code after window.onload event');
+                            //ADD CODE TO LOAD AFTER WINDOW.LOAD EVENT HERE
+                        });
+                    }
+                }
+            };
+
+
+
+            /// 4. Add extra eventListeners to track interaction
+            /**
+                * These eventListerners will be called for all users who are included in the test (always when traffic is 100)
+                */
+            var eventListeners = function () {
+                logDebug('[eventListeners]Loading eventListeners');
+                loadOnWindowLoad(function () {
+                    logDebug('[eventListeners]Running code after window.onload event');
+                    //sendCustomEvent('action'); - to send events to the tag manager. Everything will be preset but the action that you can set.
+                    //$(window).scroll(throttle(function(){ console.log('calling function') }, 500)); - this trottle calls a function only once within a time frame. Handy with eventlisteners like window.scroll
+                    //$(window).scroll(debounce(function(){ console.log('calling function') }, 500)); - this debounce only calls a function if the function is not called for a specified time (500ms) after the function was initially called.
+                    //$(window).scroll(debounce(function(){ console.log('calling function') }, 500, true)); - this debounce calls a function immediately (true) but then stops until the function is not called for a specified time (500ms)
+                    //$('body').on('click', 'button', once(function(){ console.log('showing overlay') })); - this once calls a function only once and then just returns what the function return (could just be nothing). Handy for triggering an overlay only once.
+                });
+            };
+
+
+
+            /// 5. Send the data to your tag manager of choice
+            /**
+                * Sends the event data to your favorite tag manager
+                * @param {Object} data - an object like {eventCategory: '', eventAction: '', eventLabel: ''}
+                */
+            function sendToMyTagmanager(data) {
+                data.event = test_eventName;
+                data.eventNonInteraction = true;
+                logDebug('[sendToMyTagmanager] data = ', data);
+                dataLayer.push(data);
+                //utag.link(data);
+            }
+
+
+            /// 6. Debug your implementation with these handy functions.
+            /*
+                FUNCTIONS YOU CAN USE OUTSIDE OF THE SCRIPT
+                npl_cro_script.start(); 							//Runs loadTest() and should be called if you want to run the script. Is automatically called when you set 'autoStart' to true.
+                npl_cro_script.debugOn();						//Gives you debug info in the console
+                npl_cro_script.debugOn('B');					//Gives you debug info and forces variation 'B' in this example
+                npl_cro_script.debugOff();						//Turns debug off again
+                npl_cro_script.clearLocalStorage();	//Clears the testSettings for this specific test
+                */
+
+
+
+
+
+            /*------------------------------------------------------------------------------------------------------------*/
+            /*
+                ~~~~~~~~~~~~~~~~~~~~~
+                ~~~~		   			 ~~~~
+                ~~~~   LIBRARY	 ~~~~
+                ~~~~		   			 ~~~~
+                ~~~~~~~~~~~~~~~~~~~~~
+                */
+            //////////////
+            // INITIALISE VARIABLES FOR LIBRARY & LOAD THE TEST
+            //////////////
+            var testSettings = {}, 				// testSettings = { variationLoaded: 'A', excluded: false, debug: false }
+                localStorageKey = 'npl_cro_script_data-' + test_id,
+                variationIsLoaded = false,
+                debug = (LocalStorageSupported() && getDebug()) || false,
+                isAssignedToTest = false;
+
+            /**
+                * Controls if and which test variation is loaded and stores the settings in localStorage
+                */
+            function loadTest() {
+                if (test_id === undefined || test_id === '') {
+                    throw new Error('test ID is not defined');
+                }
+                if (variationIsLoaded) throw new Error('LoadTest is called while variation is already loaded');
+
+                if (!LocalStorageSupported()) {
+                    logDebug('[loadTest]localStorage is not supported or full, so this function will stop');
+                    throw new Error('localStorage is not supported or full. The test will not be loaded');
+                }
+
+                testSettings = readLocalStorage();
+                logDebug('[loadTest]testSettings from localStorage = ', testSettings);
+
+                if (Object.keys(testSettings).length === 0 && testSettings.constructor === Object) {
+                    //Person has not seen variation or cleared storage
+                    testSettings.included = isWithinPercentage(traffic_total);
+                    testSettings.variationLoaded = selectRandomVariation(traffic_allocation);
+                    logDebug('[loadTest]New variation assigned');
+                } else {
+                    //Variation has been loaded before
+                    if (!testSettings.hasOwnProperty('variationLoaded') || !testSettings.hasOwnProperty('included')) {
+                        deleteLocalStorage();
+                        throw new Error('the testSettings object is missing one or two required properties. Deleted the wrong settings');
+                    }
+                    logDebug('[loadTest]Variation already assigned');
+                }
+                writeLocalStorage(testSettings);
+                logDebug('[loadTest]testSettings written to localStorage = ', testSettings);
+
+                if (testSettings.included) {
+                    logDebug('[loadTest]Loading variation:', testSettings.variationLoaded);
+                    variations[testSettings.variationLoaded].do(); //Load the selected variation if the person is not excluded
+                    variationIsLoaded = true;
+
+                    if (testSettings.hasOwnProperty('fireUserInTestNextPV') && testSettings.fireUserInTestNextPV == true) {
+                        logDebug('[loadTest]Set user in test on the new pageview');
+                        setUserInTest(true);
+                        testSettings.fireUserInTestNextPV = false;
+                        writeLocalStorage(testSettings);
+                    } else {
+                        triggerUserInTest();
+                    }
+
+                    eventListeners();
+                    if (sendPreloadedEvent) sendCustomEvent('Preloaded variation ' + testSettings.variationLoaded);
+                }
+            }
+
+
+
+            //////////////
+            // DECIDING WHICH VARIATION USERS WILL SEE
+            //////////////
+            /**
+                * Checks if a random number is within a percentage number
+                * @param {Number} percentage - a number between 1 - 100
+                * @return {Boolean} true if the random number is smaller than or equal to the percentage
+                */
+            function isWithinPercentage(percentage) {
+                if (isNaN(percentage)) throw new Error('percentage is not a number');
+                if (percentage > 100 || percentage < 1) throw new Error('percentage is not between 1 and 100');
+
+                if (percentage == 100) return true;
+                return (randomIntFromInterval(1, 100) <= percentage);
+            }
+
+            /**
+                * Randomly selects a variation from all defined variation, taking weights into account
+                * @param {Array} weights (optional) - e.g. [20, 40, 40]
+                * @return {String} name of the variation (key in variations object
+                */
+            function selectRandomVariation(weights) {
+                var keys = Object.keys(variations),
+                    variation;
+
+                if (typeof weights === 'undefined') weights = [];
+
+                if (weights.length === 0) {
+                    //Divide chance equally
+                    variation = keys[randomIntFromInterval(0, keys.length - 1)];
+                } else {
+                    //Use weights for chance of selecting variation
+                    if (weights.length !== keys.length) throw new Error('The number of weights should match the number of variations');
+
+                    var rndValue = randomIntFromInterval(1, weights.reduce(add, 0)), //create a random int from 1 till the sum of all weights
+                        sum = 0;
+
+                    logDebug('[selectRandomVariation] rndValue = ', rndValue);
+
+                    for (var i = 0; i < weights.length; i++) {		//sum the weights up, one by one, to check if the random number is within the range.
+                        sum += weights[i];
+                        logDebug('[selectRandomVariation] sum = ', sum);
+                        if (rndValue <= sum) {
+                            variation = keys[i];
+                            break;
+                        }
+                    }
+                }
+
+                return variation;
+            }
+
+            /**
+                * Returns a random number between a range
+                * @param {Number} min - a whole number smaller than max
+                * @param {Number} max - a whole number bigger than min
+                * @return {Number} random number between min and max
+                */
+            function randomIntFromInterval(min, max) {
+                return Math.floor(Math.random() * (max - min + 1) + min);
+            }
+
+            /**
+                * Adds two numbers
+                * @param {Number} a
+                * @param {Number} b
+                * @return {Number}
+                */
+            function add(a, b) {
+                return a + b;
+            }
+
+
+
+            //////////////
+            // SENDING (CUSTOM) EVENTS & TRIGGERS FOR EXTERNAL SERVICES (e.g. hotjar)
+            //////////////
+            /**
+                * Send event to tag management system that puts user in the test. Send it only once per loading of the test.
+                * @param {Boolean} calledInLoad - if the function is called from loadTest(). Used for firing userintest-event on next pageview.
+                */
+            function setUserInTest(calledInLoad) {
+                if (isAssignedToTest) return;
+                if (fireUserInTestNextPV && !calledInLoad) {
+                    testSettings.fireUserInTestNextPV = true;
+                    writeLocalStorage(testSettings);
+                    return;
+                }
+                isAssignedToTest = true;
+
+                //Send event or custom dimension that user is in test
+                logDebug('[setUserInTest]User is assigned to test variation ' + testSettings.variationLoaded);
+
+                var data = {
+                    interaction_type: 'experiment_start',
+                    test_name: test_id + ': ' + test_description + ' - ' + testSettings.variationLoaded + ' [LOADED]',
+                    test_variant: test_id + '|' + testSettings.variationLoaded
+                };
+                sendToMyTagmanager(data);
+
+                if (useHotjar) triggerHotjar();
+            }
+
+            /**
+                * Send event to tag management system that a custom event has happened
+                * @param {Object} data - object with the event information, custom dimensions/metrics and so forth
+                */
+            function sendCustomEvent(action) {
+                //Send event or custom dimension that user is in test
+                logDebug('[sendCustomevent]Sending custom event with action:', action);
+
+                var data = {
+                    interaction_type: 'experiment_start',
+                    test_name: test_id + ': ' + test_description + ' - ' + testSettings.variationLoaded + ' [LOADED]',
+                    test_variant: test_id + '|' + testSettings.variationLoaded
+                };
+                sendToMyTagmanager(data);
+            }
+
+
+            /**
+                * Sends triggers and recording tags for Hotjar
+                */
+            function triggerHotjar() {
+                var name = 'abTest-' + test_id,
+                    nameWithVariation = name + '-' + testSettings.variationLoaded;
+
+                logDebug('[triggerHotjar]Triggering and tagging with "' + name + '" and "' + nameWithVariation + '"');
+
+                //Check if Hotjar is actually loaded and load
+                if (typeof hj !== "function") {
+                    window.hj = window.hj || function () { (hj.q = hj.q || []).push(arguments); };
+                }
+                hj('trigger', name);
+                hj('trigger', nameWithVariation);
+                hj('tagRecording', [name, nameWithVariation]);
+            }
+
+
+
+            //////////////
+            // LOCALSTORAGE HELPERS
+            //////////////
+            /**
+                * Tests if localStorage can be used to save data
+                * @return {Boolean}
+                */
+            function LocalStorageSupported() {
+                var mod = 'test';
+                try {
+                    localStorage.setItem(mod, mod);
+                    localStorage.removeItem(mod);
+                    return true;
+                } catch (err) {
+                    return false;
+                }
+            }
+
+            /**
+                * Get data from the browser's localStorage
+                * @param {String} customKey - alternative key for getting other data than settings for this test
+                * @return {Object}
+                */
+            function readLocalStorage(customKey) {
+                var key = customKey || localStorageKey;
+                return (JSON.parse(localStorage.getItem(key)) || {});
+            }
+
+            /**
+                * Write data to the browser's localStorage
+                * @param {Object} settings - object to store in localStorage
+                * @param {String} customKey - alternative key for getting other data than settings for this test
+                */
+            function writeLocalStorage(settings, customKey) {
+                var key = customKey || localStorageKey,
+                    json = JSON.stringify(settings);
+
+                localStorage.setItem(key, json);
+            }
+
+            /**
+                * Delete settings from localStorage
+                * @param {String} customKey - alternative key for deleting other data than settings for this test
+                */
+            function deleteLocalStorage(customKey) {
+                var key = customKey || localStorageKey;
+                localStorage.removeItem(key);
+            }
+
+
+
+            //////////////
+            // DEBUG HELPERS
+            //////////////
+            /**
+                * Get the debug setting
+                * @return {Boolean}
+                */
+            function getDebug() {
+                var debugSettings = readLocalStorage('npl_cro_debug');
+                if (Object.keys(debugSettings).length !== 0 && debugSettings.constructor === Object) {
+                    if (debugSettings.hasOwnProperty('debug') || debugSettings.debug === true) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            /**
+                * Set the debug setting for the running script and remember the setting in localStorage
+                * @param {Boolean} newDebug - the new setting for debug.
+                */
+            function setDebug(newDebug) {
+                var debugSettings = { debug: !!newDebug };
+                debug = newDebug;
+                writeLocalStorage(debugSettings, 'npl_cro_debug');
+            }
+
+            /**
+                * Print debug information in arguments to the console if debug is true
+                * @return {function} - executes function with same arguments
+                */
+            function logDebug() {
+                if (debug) return console.info.apply(this, arguments);
+            }
+
+            /**
+                * Print debug warning information in arguments to the console if debug is true
+                * @return {function} - executes function with same arguments
+                */
+            function logDebugWarning() {
+                if (debug) return console.warn.apply(this, arguments);
+            }
+
+            /**
+                * Explicitly set a variation to debug and store. Automatically refreshes to load the new variation
+                * @param {String} variation - the name of the new variation (as used in the variations object)
+                */
+            function forceVariation(variation) {
+                var validVariations = Object.keys(variations);
+                if (validVariations.indexOf(variation) == -1) {
+                    logDebugWarning('Variation "' + variation + '" does not exists in variations object. Valid options are: ' + validVariations.join(', '));
+                    return;
+                }
+
+                deleteLocalStorage();
+                testSettings.included = true;
+                testSettings.variationLoaded = variation;
+                writeLocalStorage(testSettings);
+                setTimeout(function () { window.location.reload(false); }, 300);
+            }
+
+
+
+            //////////////
+            // OTHER HELPER FUNCTIONS
+            //////////////
+            /**
+                * Delay execution of a function until the window.onload event, or on document.ready if the onload event does not fire fast enough
+                * @param {Function} doFunction - function to execute
+                */
+            function loadOnWindowLoad(doFunction) {
+                if (document.readyState === 'complete') {
+                    doFunction();
+                } else {
+                    //Create backup plan with DOM loaded because the window event can be blocked by a failing external script
+                    var timer = setTimeout(function () {
+                        logDebug('[loadOnWindowLoad]Force loading doFunction after ' + forceLoadWindowLoadTime + ' seconds');
+                        removeEventListener('load', doFunction, true);
+                        if (document.readyState === 'interactive') {
+                            doFunction();
+                        } else {
+                            document.addEventListener("DOMContentLoaded", doFunction);
+                        }
+                    }, forceLoadWindowLoadTime * 1000);
+
+                    //Listen for the window.onload event
+                    window.addEventListener('load', doFunction, true);
+                    window.addEventListener('load', function () { clearTimeout(timer); }, true);
+                }
+            }
+
+            /**
+                * Throttle - Returns a function, that, when invoked, will only be triggered at most once during a given window of time
+                * Example usage: $(window).scroll(throttle(function(){ console.log('calling function') }, 500, {leading: false}));
+                * @param {Function} func - the function to be throttled
+                * @param {Number} wait - the time between function calls in ms
+                * @param {Object} options - Setting of leading or trailing calls {leading: false, trailing: true}
+                * @return {Function} The function that will only fire once in a given period.
+                */
+            function throttle(func, wait, options) {
+                var context, args, result;
+                var timeout = null;
+                var previous = 0;
+                if (!options) options = {};
+                var later = function () {
+                    previous = options.leading === false ? 0 : Date.now();
+                    timeout = null;
+                    result = func.apply(context, args);
+                    if (!timeout) context = args = null;
+                };
+                return function () {
+                    var now = Date.now();
+                    if (!previous && options.leading === false) previous = now;
+                    var remaining = wait - (now - previous);
+                    context = this;
+                    args = arguments;
+                    if (remaining <= 0 || remaining > wait) {
+                        if (timeout) {
+                            clearTimeout(timeout);
+                            timeout = null;
+                        }
+                        previous = now;
+                        result = func.apply(context, args);
+                        if (!timeout) context = args = null;
+                    } else if (!timeout && options.trailing !== false) {
+                        timeout = setTimeout(later, remaining);
+                    }
+                    return result;
+                };
+            }
+
+            /**
+                * Debounce - Returns a function, that, as long as it continues to be invoked, will not be triggered. The function will be called after it stops being called for
+                * N milliseconds.
+                * Example usage: $(window).scroll(debounce(function(){ console.log('calling function') }, 500, true));
+                * @param {Function} func - the function to be debounced
+                * @param {Number} wait - the time there need to be no function calls
+                * @param {Boolean} immediate - true if you want to fire the function right away and then wait or false if it should fire when the function is not called anymore
+                * @return {Function} The function that will be debounced.
+                */
+            function debounce(func, wait, immediate) {
+                var timeout;
+                return function () {
+                    var context = this, args = arguments;
+                    var later = function () {
+                        timeout = null;
+                        if (!immediate) func.apply(context, args);
+                    };
+                    var callNow = immediate && !timeout;
+                    clearTimeout(timeout);
+                    timeout = setTimeout(later, wait);
+                    if (callNow) func.apply(context, args);
+                };
+            }
+
+            /**
+                * Once - Returns a function that will be ran only once. After that it will just return the outcome of that function.
+                * Example usage: $(body).on('click', 'button', once(function(){ console.log('showing overlay') }));
+                * @param {Function} func - the function to be ran once
+                * @return {?} return of the function send as parameter.
+                */
+            function once(func) {
+                var ran = false, memo;
+                return function () {
+                    if (ran) return memo;
+                    ran = true;
+                    memo = func.apply(this, arguments);
+                    func = null;
+                    return memo;
+                };
+            };
+
+
+            if (autoStart) loadTest();
+
+            return {
+                start: loadTest,
+                debugOn: function (variation) {
+                    //WRITE CODE FOR LOADING THE VARIANT AND GIVING MORE OUTPUT
+                    setDebug(true);
+                    logDebug('[debugOn]Debug is on');
+
+                    if (typeof variation !== 'undefined') {
+                        logDebug('[debugOn]Force variation:', variation);
+                        forceVariation(variation);
+                    }
+                },
+                debugOff: function () {
+                    logDebug('[debugOff]Turning debug off');
+                    setDebug(false);
+                },
+                clearLocalStorage: function () {
+                    deleteLocalStorage();
+                }
+            };
+        })();
+    } catch (err) {
+        try {
+            npl_cro_script_reportError(err);
+        } catch (err) { }
+    }
+
+} //END if 'npl_cro_script' already exists
